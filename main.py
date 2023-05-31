@@ -95,7 +95,7 @@ async def get_file(dirname: str, file: str, relative_path: str | None = None):
     if pathObject.exists() == False or pathObject.is_relative_to(str(source_path)) == False or pathObject.is_file() == False:
         return {"message": f"The file path is not exist!"}
     fileResponse = FileResponse(path=pathObject.as_posix())
-    fileResponse.headers['content-disposition'] = f'inline; filename="{pathObject.name}"'
+    fileResponse.headers['content-disposition'] = f'inline; filename="{str(pathObject.name.encode("utf-8"))}"'
     fileResponse.headers['cache-control'] = 'no-cache'
     return fileResponse
 
