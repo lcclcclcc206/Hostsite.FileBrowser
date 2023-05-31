@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from type import FileInfo, DirContentInfo
 import sys
@@ -29,7 +30,20 @@ def getdir(dirname: str) -> str | None:
     else:
         return source_path
 
+
 app = FastAPI()
+
+origins = [
+    '*',
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get('/')
@@ -86,7 +100,7 @@ async def get_file(dirname: str, file: str, relative_path: str | None = None):
     return fileResponse
 
 
-@app.post('/upload')
+@app.post('/{dirname}/upload')
 async def upload_files(dirname: str, files: List[UploadFile], relative_path: str | None = None):
     source_path: str | None = getdir(dirname)
     if source_path == None:
@@ -104,4 +118,4 @@ async def upload_files(dirname: str, files: List[UploadFile], relative_path: str
 
 
 if __name__ == '__main__':
-    uvicorn.run('main:app', log_level='info')
+    uvicorn.run('main:app', port=8000, log_level='info')
