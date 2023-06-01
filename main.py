@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
@@ -101,7 +101,7 @@ async def get_file(dirname: str, file: str, relative_path: str | None = None):
 
 
 @app.post('/{dirname}/upload')
-async def upload_files(dirname: str, files: List[UploadFile], relative_path: str | None = None):
+async def upload_file(dirname: str, file: UploadFile, relative_path: str | None = None):
     source_path: str | None = getdir(dirname)
     if source_path == None:
         print(f'dirname {dirname} is not exist!')
@@ -111,11 +111,21 @@ async def upload_files(dirname: str, files: List[UploadFile], relative_path: str
     # 文件夹不存在就创建文件夹
     if (pathObject.exists() == False):
         pathObject.mkdir()
-    for file in files:
-        file_path = Path(str(pathObject), str(file.filename))
-        with open(str(file_path), mode='wb') as f:
-            f.write(await file.read())
+    file_path = Path(str(pathObject), str(file.filename))
+    with open(str(file_path), mode='wb') as f:
+        f.write(await file.read())
+
+@app.post('/{dirname}/delete')
+async def delete_file(dirname: str, filename: str, relative_path: str | None = None):
+    source_path: str | None = getdir(dirname)
+    if source_path == None:
+        print(f'dirname {dirname} is not exist!')
+        return None
+    relative_path = '' if relative_path == None else relative_path
+    pathObject = Path(str(source_path)).joinpath(str(relative_path)).resolve()
+    file_path = Path(str(pathObject), filename)
+    Path.unlink(file_path)
 
 
 if __name__ == '__main__':
-    uvicorn.run('main:app', port=8000, log_level='info')
+    uvicorn.run('main:app', port=8000, log_level='error')
