@@ -7,6 +7,7 @@ import sys
 import json
 from typing import Dict, List
 import uvicorn
+import urllib.parse
 
 dirs: List[Dict[str, str]] = []
 
@@ -95,8 +96,13 @@ async def get_file(dirname: str, file: str, relative_path: str | None = None):
     if pathObject.exists() == False or pathObject.is_relative_to(str(source_path)) == False or pathObject.is_file() == False:
         return {"message": f"The file path is not exist!"}
     fileResponse = FileResponse(path=pathObject.as_posix())
-    fileResponse.headers['content-disposition'] = f'inline; filename="{str(pathObject.name.encode("utf-8"))}"'
+    filename_encode = urllib.parse.urlencode({
+        'filename': f"{pathObject.name}"
+    })
+    fileResponse.headers[
+        'content-disposition'] = f'inline; {filename_encode}'
     fileResponse.headers['cache-control'] = 'no-cache'
+    fileResponse.charset = 'utf-8'
     return fileResponse
 
 
@@ -115,6 +121,7 @@ async def upload_file(dirname: str, file: UploadFile, relative_path: str | None 
     with open(str(file_path), mode='wb') as f:
         f.write(await file.read())
 
+
 @app.post('/{dirname}/delete')
 async def delete_file(dirname: str, filename: str, relative_path: str | None = None):
     source_path: str | None = getdir(dirname)
@@ -128,4 +135,4 @@ async def delete_file(dirname: str, filename: str, relative_path: str | None = N
 
 
 if __name__ == '__main__':
-    uvicorn.run('main:app', port=8000, log_level='error')
+    uvicorn.run('main:app', host='0.0.0.0', port=8000, log_level='error')
