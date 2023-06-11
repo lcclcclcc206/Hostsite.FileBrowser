@@ -2,34 +2,28 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
-from type import FileInfo, DirContentInfo
+from type import FileInfo, DirContentInfo, ConfigInfo, DirInfo
 import sys
 import json
 from typing import Dict, List
 import uvicorn
 import urllib.parse
 
-dirs: List[Dict[str, str]] = []
-
+config = ConfigInfo()
+# region init
 with open(Path(sys.path[0]).joinpath('config.json'), 'r', encoding='utf-8') as f:
     data = json.load(f)
-    dirs = data['dir']
+    dirs: List[DirInfo] = []
+    for dir in data['dir']:
+        dir_info = DirInfo(dir['name'], dir['path'])
+        dirs.append(dir_info)
+    for dir in dirs:
+        config.dir_dictionary[dir.name] = dir
 
-for d in dirs:
-    d['path'] = Path(d['path']).resolve().as_posix()
-
-
-def getdir(dirname: str) -> str | None:
-    source_path: str | None = None
-    for d in dirs:
-        if d['name'] == dirname:
-            source_path = d['path']
-            break
-    # 判断 dirname 是否存在
-    if source_path == None:
-        return None
-    else:
-        return source_path
+for dirname in config.dir_dictionary:
+    config.dir_dictionary[dirname].path = Path(
+        config.dir_dictionary[dirname].path).resolve().as_posix()
+# endregion
 
 
 app = FastAPI()
@@ -50,14 +44,14 @@ app.add_middleware(
 @app.get('/')
 async def get_alldirs() -> List[str]:
     dirlist: List[str] = []
-    for d in dirs:
-        dirlist.append(d['name'])
+    for dir in config.dir_dictionary.values():
+        dirlist.append(dir.name)
     return dirlist
 
 
 @app.get('/{dirname}/info')
 async def get_dirinfo(dirname: str, relative_path: str | None = None):
-    source_path: str | None = getdir(dirname)
+    source_path: str | None = config.get_dirpath(dirname)
     if source_path == None:
         print(f'dirname {dirname} is not exist!')
         return None
@@ -85,7 +79,7 @@ async def get_dirinfo(dirname: str, relative_path: str | None = None):
 
 @app.get('/{dirname}/download')
 async def get_file(dirname: str, file: str, relative_path: str | None = None):
-    source_path: str | None = getdir(dirname)
+    source_path: str | None = config.get_dirpath(dirname)
     if source_path == None:
         print(f'dirname {dirname} is not exist!')
         return None
@@ -108,7 +102,7 @@ async def get_file(dirname: str, file: str, relative_path: str | None = None):
 
 @app.post('/{dirname}/upload')
 async def upload_file(dirname: str, file: UploadFile, relative_path: str | None = None):
-    source_path: str | None = getdir(dirname)
+    source_path: str | None = config.get_dirpath(dirname)
     if source_path == None:
         print(f'dirname {dirname} is not exist!')
         return None
@@ -124,7 +118,7 @@ async def upload_file(dirname: str, file: UploadFile, relative_path: str | None 
 
 @app.post('/{dirname}/delete')
 async def delete_file(dirname: str, filename: str, relative_path: str | None = None):
-    source_path: str | None = getdir(dirname)
+    source_path: str | None = config.get_dirpath(dirname)
     if source_path == None:
         print(f'dirname {dirname} is not exist!')
         return None
