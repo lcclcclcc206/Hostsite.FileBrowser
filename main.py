@@ -1,11 +1,11 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, Depends
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from type import FileInfo, DirContentInfo, ConfigInfo, DirInfo
 import sys
 import json
-from typing import Dict, List
+from typing import List
 import uvicorn
 import urllib.parse
 
@@ -41,6 +41,26 @@ app.add_middleware(
 )
 
 
+async def get_path(dirname: str, relative_path: str | None = None) -> str:
+    source_path: str | None = config.get_dirpath(dirname)
+    if source_path == None:
+        raise Exception(f'dirname {dirname} is not exist!')
+    if relative_path is None:
+        relative_path = ''
+    pathObject = Path(str(source_path)).joinpath(str(relative_path)).resolve()
+    # 判断文件是否存在，并且文件不在源目录的上级目录
+    if pathObject.exists() == False or pathObject.is_relative_to(str(source_path)) == False:
+        raise Exception(f"The file path {str(pathObject)} is not exist!")
+    return str(pathObject)
+
+
+async def get_file(file: str, path: str = Depends(get_path)):
+    pathObject = Path(path).joinpath(file).resolve()
+    if pathObject.exists() == False or pathObject.is_relative_to(path) == False or pathObject.is_file() == False:
+        raise Exception(f"The file {str(pathObject)} is not exist!")
+    return str(pathObject)
+
+
 @app.get('/')
 async def get_alldirs() -> List[str]:
     dirlist: List[str] = []
@@ -50,19 +70,8 @@ async def get_alldirs() -> List[str]:
 
 
 @app.get('/{dirname}/info')
-async def get_dirinfo(dirname: str, relative_path: str | None = None):
-    source_path: str | None = config.get_dirpath(dirname)
-    if source_path == None:
-        print(f'dirname {dirname} is not exist!')
-        return None
-    relative_path = '' if relative_path == None else relative_path
-    pathObject = Path(str(source_path)).joinpath(
-        str(relative_path)).resolve()
-    # 判断文件是否存在，并且文件不在源目录的上级目录
-    if pathObject.exists() == False or pathObject.is_relative_to(str(source_path)) == False:
-        print(f"The file path {str(pathObject)} is not exist!")
-        return {"message": "The file path is not exist!"}
-    dirContentInfo = DirContentInfo(str(pathObject))
+async def get_dirinfo(path: str = Depends(get_path)):
+    dirContentInfo = DirContentInfo(path)
     for child_path in Path(dirContentInfo.source_path).iterdir():
         file = FileInfo(child_path.is_file(), child_path.name,
                         child_path.stat().st_mtime, child_path.stat().st_size)
@@ -78,17 +87,8 @@ async def get_dirinfo(dirname: str, relative_path: str | None = None):
 
 
 @app.get('/{dirname}/download')
-async def get_file(dirname: str, file: str, relative_path: str | None = None):
-    source_path: str | None = config.get_dirpath(dirname)
-    if source_path == None:
-        print(f'dirname {dirname} is not exist!')
-        return None
-    relative_path = '' if relative_path == None else relative_path
-    pathObject = Path(str(source_path)).joinpath(
-        str(relative_path), file).resolve()
-    # 判断文件是否存在，并且文件不在源目录的上级目录，并且下载的路径为文件
-    if pathObject.exists() == False or pathObject.is_relative_to(str(source_path)) == False or pathObject.is_file() == False:
-        return {"message": f"The file path is not exist!"}
+async def download_file(file_path:str = Depends(get_file)):
+    pathObject = Path(file_path)
     fileResponse = FileResponse(path=pathObject.as_posix())
     filename_encode = urllib.parse.urlencode({
         'filename': f"{pathObject.name}"
@@ -101,31 +101,16 @@ async def get_file(dirname: str, file: str, relative_path: str | None = None):
 
 
 @app.post('/{dirname}/upload')
-async def upload_file(dirname: str, file: UploadFile, relative_path: str | None = None):
-    source_path: str | None = config.get_dirpath(dirname)
-    if source_path == None:
-        print(f'dirname {dirname} is not exist!')
-        return None
-    relative_path = '' if relative_path == None else relative_path
-    pathObject = Path(str(source_path)).joinpath(str(relative_path)).resolve()
-    # 文件夹不存在就创建文件夹
-    if (pathObject.exists() == False):
-        pathObject.mkdir()
+async def upload_file(file: UploadFile, path:str = Depends(get_path)):
+    pathObject = Path(path)
     file_path = Path(str(pathObject), str(file.filename))
     with open(str(file_path), mode='wb') as f:
         f.write(await file.read())
 
 
 @app.post('/{dirname}/delete')
-async def delete_file(dirname: str, filename: str, relative_path: str | None = None):
-    source_path: str | None = config.get_dirpath(dirname)
-    if source_path == None:
-        print(f'dirname {dirname} is not exist!')
-        return None
-    relative_path = '' if relative_path == None else relative_path
-    pathObject = Path(str(source_path)).joinpath(str(relative_path)).resolve()
-    file_path = Path(str(pathObject), filename)
-    Path.unlink(file_path)
+async def delete_file(file_path:str = Depends(get_file)):
+    Path.unlink(Path(file_path))
 
 
 if __name__ == '__main__':
