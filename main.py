@@ -87,21 +87,20 @@ async def get_dirinfo(path: str = Depends(get_path)):
 
 
 @app.get('/{dirname}/download')
-async def download_file(file_path:str = Depends(get_file)):
+async def download_file(inline: bool = True, file_path: str = Depends(get_file)):
     pathObject = Path(file_path)
     fileResponse = FileResponse(path=pathObject.as_posix())
     filename_encode = urllib.parse.urlencode({
         'filename': f"{pathObject.name}"
     })
-    fileResponse.headers[
-        'content-disposition'] = f'inline; {filename_encode}'
+    fileResponse.headers['content-disposition'] = f'{"inline" if inline else "attachment"}; {filename_encode}'
     fileResponse.headers['cache-control'] = 'no-cache'
     fileResponse.charset = 'utf-8'
     return fileResponse
 
 
 @app.post('/{dirname}/upload')
-async def upload_file(file: UploadFile, path:str = Depends(get_path)):
+async def upload_file(file: UploadFile, path: str = Depends(get_path)):
     pathObject = Path(path)
     file_path = Path(str(pathObject), str(file.filename))
     with open(str(file_path), mode='wb') as f:
@@ -109,7 +108,7 @@ async def upload_file(file: UploadFile, path:str = Depends(get_path)):
 
 
 @app.post('/{dirname}/delete')
-async def delete_file(file_path:str = Depends(get_file)):
+async def delete_file(file_path: str = Depends(get_file)):
     Path.unlink(Path(file_path))
 
 
