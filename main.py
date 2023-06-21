@@ -1,13 +1,25 @@
-from fastapi import FastAPI, UploadFile, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, Depends
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from type import FileInfo, DirContentInfo, ConfigInfo, DirInfo
-import sys
-import json
+import sys, json
 from typing import List
 import uvicorn
 import urllib.parse
+from sqlalchemy.orm import Session
+import crud, models, schemas
+from database import SessionLocal, engine
+
+models.Base.metadata.create_all(bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 config = ConfigInfo()
 # region init
@@ -110,6 +122,13 @@ async def upload_file(file: UploadFile, path: str = Depends(get_path)):
 @app.post('/{dirname}/delete')
 async def delete_file(file_path: str = Depends(get_file)):
     Path.unlink(Path(file_path))
+
+@app.post('/user', response_model=schemas.User)
+def get_user(username: str, db: Session = Depends(get_db)):
+    db_user = crud.get_user_by_username(db, username=username)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
 
 
 if __name__ == '__main__':
