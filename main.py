@@ -1,17 +1,31 @@
-from fastapi import FastAPI, HTTPException, UploadFile, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, Depends, Form, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from jose import JWTError, jwt
 from pathlib import Path
+from pydantic import BaseModel
 from type import FileInfo, DirContentInfo, ConfigInfo, DirInfo
-import sys, json
+import sys
+import json
+from datetime import datetime, timedelta
 from typing import List
 import uvicorn
 import urllib.parse
 from sqlalchemy.orm import Session
-import crud, models, schemas
-from database import SessionLocal, engine
+import dataEntry.crud
+import dataEntry.models
+import dataEntry.schemas
+from dataEntry.database import SessionLocal, engine
 
-models.Base.metadata.create_all(bind=engine)
+SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_TIME = 2
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+dataEntry.models.Base.metadata.create_all(bind=engine)
+
 
 def get_db():
     db = SessionLocal()
@@ -21,12 +35,31 @@ def get_db():
         db.close()
 
 
+async def verify_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    db_user: dataEntry.models.User | None = None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        db_user = dataEntry.crud.get_user_by_username(db, username)
+        if (db_user == None):
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    return db_user
+
 config = ConfigInfo()
 # region init
 with open(Path(sys.path[0]).joinpath('config.json'), 'r', encoding='utf-8') as f:
-    data = json.load(f)
+    config_data = json.load(f)
     dirs: List[DirInfo] = []
-    for dir in data['dir']:
+    for dir in config_data['dir']:
         dir_info = DirInfo(dir['name'], dir['path'])
         dirs.append(dir_info)
     for dir in dirs:
@@ -111,7 +144,7 @@ async def download_file(inline: bool = True, file_path: str = Depends(get_file))
     return fileResponse
 
 
-@app.post('/{dirname}/upload')
+@app.post('/{dirname}/upload', dependencies=[Depends(verify_token)])
 async def upload_file(file: UploadFile, path: str = Depends(get_path)):
     pathObject = Path(path)
     file_path = Path(str(pathObject), str(file.filename))
@@ -119,16 +152,60 @@ async def upload_file(file: UploadFile, path: str = Depends(get_path)):
         f.write(await file.read())
 
 
-@app.post('/{dirname}/delete')
+@app.post('/{dirname}/delete', dependencies=[Depends(verify_token)])
 async def delete_file(file_path: str = Depends(get_file)):
     Path.unlink(Path(file_path))
 
-@app.post('/user', response_model=schemas.User)
-def get_user(username: str, db: Session = Depends(get_db)):
-    db_user = crud.get_user_by_username(db, username=username)
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    username: str
+    active_time: float
+    expire_time: float
+
+
+def verify_user(db_user: dataEntry.models.User, password: str):
     if db_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return db_user
+        return False
+    elif password != db_user.password:
+        return False
+    return True
+
+
+def create_access_token(data: dict, expires_delta: timedelta):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+@app.post('/token', response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    db_user = dataEntry.crud.get_user_by_username(db, form_data.username)
+    if verify_user(db_user, form_data.password) == False:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(hours=ACCESS_TOKEN_EXPIRE_TIME)
+    access_token = create_access_token(
+        data={"sub": db_user.username},
+        expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer", "username": db_user.username, "active_time": datetime.utcnow().timestamp(), "expire_time": (datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_TIME)).timestamp(), }
+
+
+@app.post('/token/refresh', response_model=Token)
+async def refresh_token(db_user: dataEntry.models.User = Depends(verify_token)):
+    access_token_expires = timedelta(hours=ACCESS_TOKEN_EXPIRE_TIME)
+    access_token = create_access_token(
+        data={"sub": db_user.username},
+        expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer", "username": db_user.username, "active_time": datetime.utcnow().timestamp(), "expire_time": (datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_TIME)).timestamp(), }
 
 
 if __name__ == '__main__':
