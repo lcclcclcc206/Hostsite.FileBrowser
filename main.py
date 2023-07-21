@@ -156,7 +156,6 @@ async def upload_file(file: UploadFile, path: str = Depends(get_path)):
 async def delete_file(file_path: str = Depends(get_file)):
     Path.unlink(Path(file_path))
 
-
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -207,6 +206,14 @@ async def refresh_token(db_user: dataEntry.models.User = Depends(verify_token)):
     )
     return {"access_token": access_token, "token_type": "bearer", "username": db_user.username, "active_time": datetime.utcnow().timestamp(), "expire_time": (datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_TIME)).timestamp(), }
 
+@app.post('/token/verify', dependencies=[Depends(verify_token)])
+async def verify_token_api():
+    return None;
+
+@app.post('/test', dependencies=[Depends(verify_token)])
+async def test_post():
+    print('hello')
+
 
 if __name__ == '__main__':
-    uvicorn.run('main:app', host='0.0.0.0', port=8000, log_level='error')
+    uvicorn.run('main:app', host='0.0.0.0', port=6166, log_level='error')
