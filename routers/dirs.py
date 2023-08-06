@@ -1,4 +1,4 @@
-from fastapi import UploadFile, Depends, APIRouter
+from fastapi import HTTPException, status, UploadFile, Depends, APIRouter
 from fastapi.responses import FileResponse
 from pathlib import Path
 from type import FileInfo, DirContentInfo
@@ -10,6 +10,7 @@ from dependencies import get_file, get_path, verify_token
 router = APIRouter(
     tags=["dir"]
 )
+
 
 @router.get('/')
 async def get_alldirs() -> List[str]:
@@ -60,3 +61,41 @@ async def upload_file(file: UploadFile, path: str = Depends(get_path)):
 @router.post('/{dirname}/delete', dependencies=[Depends(verify_token)])
 async def delete_file(file_path: str = Depends(get_file)):
     Path.unlink(Path(file_path))
+
+
+@router.post('/{dirname}/create-folder', dependencies=[Depends(verify_token)])
+async def create_folder(folder_name: str, dirname: str, relative_path: str | None = None):
+    error_exception = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Create Folder fail"
+    )
+    folder_name = folder_name.strip()
+    if len(folder_name) <= 0 or folder_name == None:
+        raise error_exception
+    source_path: str | None = config.get_dirpath(dirname)
+    if source_path == None:
+        raise Exception(f'dirname {dirname} is not exist!')
+    if relative_path is None:
+        relative_path = ''
+    pathObject = Path(str(source_path)).joinpath(
+        str(relative_path)).joinpath(folder_name).resolve()
+    if (pathObject.exists()):
+        raise error_exception
+    pathObject.mkdir()
+
+
+@router.post('/{dirname}/delete-folder', dependencies=[Depends(verify_token)])
+async def delete_folder(folder_name: str, path: str = Depends(get_path)):
+    error_exception = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Delete Folder fail"
+    )
+    pathObject = Path(path).joinpath(folder_name)
+    count = 0
+    for _ in pathObject.iterdir():
+        if(count > 0):
+            break
+        count += 1
+    if (pathObject.exists() == False or count > 0):
+        raise error_exception
+    pathObject.rmdir()
