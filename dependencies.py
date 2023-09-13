@@ -52,7 +52,7 @@ async def get_path(dirname: str, relative_path: str | None = None) -> str:
     pathObject = Path(str(source_path)).joinpath(str(relative_path)).resolve()
     # 判断文件是否存在，并且文件不在源目录的上级目录
     if pathObject.exists() == False or pathObject.is_relative_to(str(source_path)) == False:
-        raise Exception(f"The file path {str(pathObject)} is not exist!")
+        raise Exception(f'The file path {str(pathObject)} is not exist!')
     return str(pathObject)
 
 
